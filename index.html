@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CF 避雷小本本</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f131a'/%3E%3Cg stroke='%23f68a1e' stroke-width='5' stroke-linecap='round'%3E%3Cline x1='32' y1='10' x2='32' y2='22'/%3E%3Cline x1='32' y1='42' x2='32' y2='54'/%3E%3Cline x1='10' y1='32' x2='22' y2='32'/%3E%3Cline x1='42' y1='32' x2='54' y2='32'/%3E%3C/g%3E%3Ccircle cx='32' cy='32' r='8' fill='none' stroke='%23f68a1e' stroke-width='5'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0f131a;
+  --bg-soft:#121724;
+  --panel:#161c26;
+  --panel-2:#1b2230;
+  --line:#242d3d;
+  --line-2:#2c3750;
+  --txt:#d9dfe8;
+  --sub:#8b95a8;
+  --dim:#5d6778;
+  --accent:#f68a1e;
+  --accent-2:#ffa94d;
+  --danger:#e5484d;
+  --ok:#3ec6b6;
+  --warn:#f2c14e;
+  --radius:10px;
+  --shadow:0 12px 32px rgba(0,0,0,.35);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);
+  background-image:
+    linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);
+  background-size:36px 36px;
+  color:var(--txt);
+  font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+  min-height:100vh;
+}
+button{font-family:inherit}
+input,textarea{font-family:inherit}
+.hidden{display:none!important}
+
+/* ===== 锁定屏 ===== */
+.lock{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+}
+.lock-card{
+  width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);
+  border-radius:16px;padding:40px 32px;box-shadow:var(--shadow);text-align:center;
+}
+.lock-badge{
+  width:64px;height:64px;margin:0 auto 18px;border-radius:14px;
+  background:linear-gradient(135deg,#1c2434,#141a26);
+  border:1px solid var(--line-2);
+  display:flex;align-items:center;justify-content:center;
+}
+.lock-card h1{font-size:22px;font-weight:800;letter-spacing:1px}
+.lock-sub{color:var(--sub);font-size:13px;margin:8px 0 26px}
+.lock-card input{
+  width:100%;background:var(--bg-soft);border:1px solid var(--line-2);color:var(--txt);
+  border-radius:var(--radius);padding:13px 14px;font-size:15px;outline:none;
+  transition:border-color .15s;
+}
+.lock-card input:focus{border-color:var(--accent)}
+.lock-hint{color:var(--danger);font-size:12.5px;margin-top:12px;min-height:18px}
+.btn{
+  cursor:pointer;border:none;border-radius:var(--radius);font-size:14px;font-weight:600;
+  padding:11px 18px;transition:background .15s,transform .1s,color .15s;user-select:none;
+}
+.btn:active{transform:translateY(1px)}
+.btn-accent{background:var(--accent);color:#14100a;width:100%;margin-top:14px;font-size:15px}
+.btn-accent:hover{background:var(--accent-2)}
+.btn-ghost{background:transparent;color:var(--sub);border:1px solid var(--line-2)}
+.btn-ghost:hover{color:var(--txt);border-color:var(--accent)}
+.btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+.btn-danger:hover{background:rgba(229,72,77,.12)}
+
+/* ===== 顶栏 ===== */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 20px;background:rgba(15,19,26,.88);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand-mark{
+  width:38px;height:38px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#1e2638,#131926);border:1px solid var(--line-2);
+}
+.brand h1{font-size:17px;font-weight:800;letter-spacing:.5px;white-space:nowrap}
+.brand-sub{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-actions{display:flex;gap:8px;flex:none}
+.top-actions .btn{padding:9px 13px;font-size:13px}
+.btn-accent-line{background:var(--accent);color:#14100a}
+.btn-accent-line:hover{background:var(--accent-2)}
+
+/* ===== Hero / 搜索 ===== */
+.hero{padding:26px 20px 20px;max-width:860px;margin:0 auto}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.stat{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:13px 10px;text-align:center;
+}
+.stat b{display:block;font-size:22px;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums}
+.stat span{font-size:11.5px;color:var(--sub)}
+.stat b.risk-num{color:var(--warn)}
+.search-wrap{position:relative}
+.search-wrap svg{position:absolute;left:16px;top:50%;transform:translateY(-50%);width:19px;height:19px;stroke:var(--sub);pointer-events:none}
+#searchInput{
+  width:100%;background:var(--panel);border:1.5px solid var(--line-2);color:var(--txt);
+  border-radius:14px;padding:16px 78px 16px 48px;font-size:17px;outline:none;
+  box-shadow:var(--shadow);transition:border-color .15s;
+}
+#searchInput:focus{border-color:var(--accent)}
+#searchInput::placeholder{color:var(--dim)}
+.search-clear{
+  position:absolute;right:10px;top:50%;transform:translateY(-50%);
+  width:34px;height:34px;border-radius:9px;border:1px solid var(--line-2);
+  background:var(--panel-2);color:var(--sub);font-size:16px;cursor:pointer;line-height:1;
+}
+.search-clear:hover{color:var(--txt);border-color:var(--accent)}
+
+/* ===== 列表 ===== */
+.list-wrap{max-width:860px;margin:0 auto;padding:0 20px 90px}
+.list-head{
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:6px 4px 10px;color:var(--dim);font-size:12px;
+}
+.list-head b{color:var(--txt);font-size:13px}
+.player{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  margin-bottom:10px;overflow:hidden;
+}
+.player-head{
+  display:flex;align-items:center;gap:12px;padding:13px 16px;cursor:pointer;
+  transition:background .12s;width:100%;text-align:left;border:none;background:transparent;color:inherit;font:inherit;
+}
+.player-head:hover{background:var(--panel-2)}
+.player-name{font-size:15.5px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.player-name mark{background:rgba(246,138,30,.35);color:var(--accent-2);border-radius:3px;padding:0 1px}
+.badge{flex:none;font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;letter-spacing:.3px}
+.badge-risk{background:rgba(229,72,77,.16);color:var(--danger);border:1px solid rgba(229,72,77,.45)}
+.badge-multi{background:rgba(242,193,78,.14);color:var(--warn);border:1px solid rgba(242,193,78,.4)}
+.badge-once{background:rgba(139,149,168,.14);color:var(--sub);border:1px solid var(--line-2)}
+.player-meta{flex:none;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.caret{flex:none;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--dim);transition:transform .18s}
+.player.open .caret{transform:rotate(180deg)}
+.player-body{display:none;border-top:1px solid var(--line);background:rgba(10,13,19,.4)}
+.player.open .player-body{display:block}
+.rec{
+  display:grid;grid-template-columns:88px 64px 1fr 34px;gap:8px;align-items:center;
+  padding:10px 16px;border-bottom:1px dashed var(--line);
+}
+.rec:last-child{border-bottom:none}
+.rec .d{color:var(--sub);font-size:12.5px;font-variant-numeric:tabular-nums}
+.rec .t{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums}
+.rec .n{font-size:13px;color:var(--txt);line-height:1.5}
+.rec .n:empty::before{content:"—";color:var(--dim)}
+.rec .n mark{background:rgba(246,138,30,.35);color:var(--accent-2);border-radius:3px;padding:0 1px}
+.rec-del{
+  width:30px;height:30px;border:none;border-radius:8px;background:transparent;color:var(--dim);
+  font-size:15px;cursor:pointer;line-height:1;transition:color .12s,background .12s;
+}
+.rec-del:hover{color:var(--danger);background:rgba(229,72,77,.12)}
+.empty{
+  text-align:center;padding:52px 20px;color:var(--dim);
+  border:1px dashed var(--line-2);border-radius:var(--radius);background:var(--panel);
+}
+.empty b{display:block;font-size:16px;color:var(--sub);margin-bottom:6px}
+
+/* ===== 底部 FAB ===== */
+.fab{
+  position:fixed;right:20px;bottom:20px;z-index:40;
+  width:56px;height:56px;border-radius:16px;border:none;cursor:pointer;
+  background:var(--accent);color:#14100a;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 10px 24px rgba(246,138,30,.35);transition:transform .12s,background .15s;
+}
+.fab:hover{background:var(--accent-2);transform:translateY(-2px)}
+.foot{max-width:860px;margin:0 auto;padding:14px 20px 30px;color:var(--dim);font-size:11.5px;text-align:center}
+
+/* ===== 弹窗 ===== */
+.modal{
+  position:fixed;inset:0;z-index:100;background:rgba(5,7,11,.72);
+  display:flex;align-items:center;justify-content:center;padding:18px;
+  backdrop-filter:blur(3px);
+}
+.modal-box{
+  width:100%;max-width:430px;background:var(--panel);border:1px solid var(--line-2);
+  border-radius:16px;padding:24px;box-shadow:var(--shadow);max-height:92vh;overflow:auto;
+}
+.modal-box h2{font-size:17px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:9px}
+.modal-box h2 .bar{width:4px;height:18px;background:var(--accent);border-radius:2px}
+.modal-box label{display:block;font-size:12.5px;color:var(--sub);margin-bottom:13px}
+.modal-box input,.modal-box textarea{
+  width:100%;background:var(--bg-soft);border:1px solid var(--line-2);color:var(--txt);
+  border-radius:9px;padding:11px 12px;font-size:14px;outline:none;margin-top:6px;
+  transition:border-color .15s;resize:vertical;
+}
+.modal-box input:focus,.modal-box textarea:focus{border-color:var(--accent)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:6px}
+.modal-actions .btn{min-width:88px}
+.warn-tip{
+  background:rgba(242,193,78,.1);border:1px solid rgba(242,193,78,.35);color:var(--warn);
+  border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.6;margin-bottom:14px;
+}
+.warn-tip b{color:var(--warn)}
+.pwd-hint{color:var(--dim);font-size:11.5px;margin-top:8px;line-height:1.6}
+
+/* ===== Toast ===== */
+#toast{
+  position:fixed;left:50%;bottom:34px;transform:translateX(-50%) translateY(20px);z-index:200;
+  background:var(--panel-2);border:1px solid var(--line-2);color:var(--txt);
+  border-radius:10px;padding:11px 18px;font-size:13.5px;opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s;max-width:86vw;box-shadow:var(--shadow);
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.ok{border-color:rgba(62,198,182,.5)}
+#toast.err{border-color:rgba(229,72,77,.55)}
+
+/* ===== 响应式 ===== */
+@media (max-width:640px){
+  .topbar{padding:10px 14px}
+  .brand-sub{display:none}
+  .top-actions .btn{padding:8px 10px;font-size:12.5px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+  .top-actions .btn.only-pc{display:none}
+  .hero{padding:18px 14px 14px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .list-wrap{padding:0 14px 100px}
+  .rec{grid-template-columns:80px 56px 1fr 34px}
+  .rec .n{font-size:14px}
+  .player-meta{display:none}
+  .stat b{font-size:19px}
+  .lock-card input,.modal-box input,.modal-box textarea{font-size:16px}
+  .lock-card{padding:34px 24px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 锁定屏 ===== -->
+<div id="lockScreen" class="lock">
+  <div class="lock-card">
+    <div class="lock-badge">
+      <svg width="30" height="30" viewBox="0 0 64 64" fill="none"><g stroke="#f68a1e" stroke-width="6" stroke-linecap="round"><line x1="32" y1="10" x2="32" y2="22"/><line x1="32" y1="42" x2="32" y2="54"/><line x1="10" y1="32" x2="22" y2="32"/><line x1="42" y1="32" x2="54" y2="32"/></g><circle cx="32" cy="32" r="8" fill="none" stroke="#f68a1e" stroke-width="6"/></svg>
+    </div>
+    <h1>CF 避雷小本本</h1>
+    <p class="lock-sub">输入密码查看名单 · 首次使用输入初始密码 cf2026</p>
+    <input type="password" id="lockPwd" placeholder="密码" autocomplete="current-password">
+    <button id="lockBtn" class="btn btn-accent">解锁</button>
+    <p class="lock-hint" id="lockHint"></p>
+  </div>
+</div>
+
+<!-- ===== 主界面 ===== -->
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg width="20" height="20" viewBox="0 0 64 64" fill="none"><g stroke="#f68a1e" stroke-width="7" stroke-linecap="round"><line x1="32" y1="10" x2="32" y2="22"/><line x1="32" y1="42" x2="32" y2="54"/><line x1="10" y1="32" x2="22" y2="32"/><line x1="42" y1="32" x2="54" y2="32"/></g><circle cx="32" cy="32" r="8" fill="none" stroke="#f68a1e" stroke-width="7"/></svg>
+      </span>
+      <div>
+        <h1>CF 避雷小本本</h1>
+        <p class="brand-sub">遇到就记一笔 · 再遇直接避</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="addBtn" class="btn btn-accent-line">记一笔</button>
+      <button id="exportBtn" class="btn btn-ghost">导出</button>
+      <button id="importBtn" class="btn btn-ghost only-pc">导入</button>
+      <button id="pwdBtn" class="btn btn-ghost">改密码</button>
+      <button id="lockBtn2" class="btn btn-ghost">锁定</button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="stats">
+      <div class="stat"><b id="stPlayers">0</b><span>记录玩家</span></div>
+      <div class="stat"><b id="stRecords">0</b><span>记录条数</span></div>
+      <div class="stat"><b id="stRisk" class="risk-num">0</b><span>多次玩家</span></div>
+      <div class="stat"><b id="stRecent">—</b><span>最近记录</span></div>
+    </div>
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+      <input id="searchInput" type="text" placeholder="输入玩家名或关键词，即输即搜" autocomplete="off">
+      <button id="clearSearch" class="search-clear hidden" aria-label="清空搜索">×</button>
+    </div>
+  </section>
+
+  <div class="list-wrap">
+    <div class="list-head">
+      <span><b id="listCount">0</b> 名玩家</span>
+      <span>按最近记录排序 · 点击玩家展开明细</span>
+    </div>
+    <main id="list"></main>
+  </div>
+
+  <button id="fabAdd" class="fab" aria-label="记一笔">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </button>
+
+  <div class="foot">名单以密码加密后仅存于本浏览器 · 请定期导出备份，更换设备或清除缓存前务必先导出</div>
+</div>
+
+<!-- ===== 记一笔弹窗 ===== -->
+<div id="addModal" class="modal hidden">
+  <div class="modal-box">
+    <h2><span class="bar"></span>记一笔</h2>
+    <label>玩家名<em style="color:var(--danger);font-style:normal"> *</em>
+      <input id="fName" placeholder="游戏里的玩家名" maxlength="40">
+    </label>
+    <div class="row2">
+      <label>日期<input type="date" id="fDate"></label>
+      <label>时间<input type="time" id="fTime"></label>
+    </div>
+    <label>行为 / 备注
+      <textarea id="fNote" rows="2" placeholder="他做了什么，如：速抓捣乱"></textarea>
+    </label>
+    <div class="modal-actions">
+      <button id="addCancel" class="btn btn-ghost">取消</button>
+      <button id="addSave" class="btn btn-accent">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 改密码弹窗 ===== -->
+<div id="pwdModal" class="modal hidden">
+  <div class="modal-box">
+    <h2><span class="bar"></span>修改密码</h2>
+    <div class="warn-tip" id="pwdWarn">当前仍在使用初始密码 <b>cf2026</b>，建议立即修改，避免他人直接用初始密码查看你的名单。</div>
+    <label>当前密码<input type="password" id="pOld" autocomplete="current-password"></label>
+    <label>新密码<input type="password" id="pNew" autocomplete="new-password" placeholder="至少 6 位"></label>
+    <label>确认新密码<input type="password" id="pNew2" autocomplete="new-password"></label>
+    <div class="modal-actions">
+      <button id="pwdCancel" class="btn btn-ghost">取消</button>
+      <button id="pwdSave" class="btn btn-accent">确认修改</button>
+    </div>
+    <p class="pwd-hint">密码仅保存在你的脑子里，改后请牢记；忘记密码将无法解开名单（可重新导入备份）。</p>
+  </div>
+</div>
+
+<input type="file" id="importFile" class="hidden" accept=".json,.csv,application/json,text/csv">
+
+<!-- ===== 导入密码弹窗 ===== -->
+<div id="impModal" class="modal hidden">
+  <div class="modal-box">
+    <h2><span class="bar"></span>导入备份</h2>
+    <div class="warn-tip" id="impKind">备份文件</div>
+    <label>该备份的密码<input type="password" id="impPwd" placeholder="默认填当前密码"></label>
+    <div class="modal-actions">
+      <button id="impCancel" class="btn btn-ghost">取消</button>
+      <button id="impSave" class="btn btn-accent">导入</button>
+    </div>
+    <p class="pwd-hint">导入会合并进当前名单：已有记录保留，备份中不重复的新记录追加进来。</p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ================= 常量与内嵌加密数据 ================= */
+var SALT_B64 = "Y2YtYmxhY2tsaXN0LXNhbHQtdjE=";
+var ITER = 100000;
+var LS_KEY = "cf-blacklist-data-v1";
+var SESSION_KEY = "cf-blacklist-session-key";
+var INITIAL_ENC = {"v":1,"salt":"Y2YtYmxhY2tsaXN0LXNhbHQtdjE=","iter":100000,"iv":"dTZ4Jj6VyoFLw+8E","ct":"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"};
+
+/* ================= 工具函数 ================= */
+function b64ToBytes(b64){
+  var bin = atob(b64);
+  var u = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+function bytesToB64(bytes){
+  var bin = "";
+  var chunk = 0x8000;
+  for (var i = 0; i < bytes.length; i += chunk){
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+function esc(s){
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function markHtml(text, kw){
+  var t = esc(text);
+  if (!kw) return t;
+  var lower = text.toLowerCase();
+  var k = kw.toLowerCase();
+  if (lower.indexOf(k) === -1) return t;
+  var out = "";
+  var i = 0;
+  while (true){
+    var idx = lower.indexOf(k, i);
+    if (idx === -1){ out += t.slice(i); break; }
+    out += t.slice(i, idx) + "<mark>" + t.slice(idx, idx + k.length) + "</mark>";
+    i = idx + k.length;
+  }
+  return out;
+}
+function todayStr(){
+  var d = new Date();
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+}
+function nowTime(){
+  var d = new Date();
+  return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+function pad2(n){ return (n < 10 ? "0" : "") + n; }
+function uid(){
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function $(id){ return document.getElementById(id); }
+
+/* ================= 加解密（Web Crypto） ================= */
+function deriveKey(password){
+  var enc = new TextEncoder();
+  return crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"])
+    .then(function(km){
+      return crypto.subtle.deriveKey(
+        {name: "PBKDF2", salt: b64ToBytes(SALT_B64), iterations: ITER, hash: "SHA-256"},
+        km, {name: "AES-GCM", length: 256}, false, ["encrypt", "decrypt"]);
+    });
+}
+function encryptObj(key, obj){
+  var iv = crypto.getRandomValues(new Uint8Array(12));
+  var plain = new TextEncoder().encode(JSON.stringify(obj));
+  return crypto.subtle.encrypt({name: "AES-GCM", iv: iv}, key, plain)
+    .then(function(ct){
+      return {v: 1, salt: SALT_B64, iter: ITER, iv: bytesToB64(iv), ct: bytesToB64(new Uint8Array(ct))};
+    });
+}
+function decryptObj(key, payload){
+  try {
+    var iv = b64ToBytes(payload.iv);
+    var ct = b64ToBytes(payload.ct);
+    return crypto.subtle.decrypt({name: "AES-GCM", iv: iv}, key, ct)
+      .then(function(plain){
+        return JSON.parse(new TextDecoder().decode(plain));
+      })
+      .catch(function(){ return null; });
+  } catch (e){ return Promise.resolve(null); }
+}
+
+/* ================= 状态 ================= */
+var state = {
+  key: null,       // CryptoKey
+  data: null,      // {records: [], updatedAt: ""}
+  query: "",
+  expanded: {},    // name -> true
+  firstInit: false // 本次是否首次导入初始名单
+};
+
+function ensureIds(records){
+  for (var i = 0; i < records.length; i++){
+    if (!records[i].id){
+      records[i].id = (records[i].name || "?") + "_" + (records[i].date || "") + "_" + (records[i].time || "") + "_" + i;
+    }
+  }
+  return records;
+}
+function mergeRecords(existing, incoming){
+  // 以 name+date+time 为去重键合并
+  var seen = {};
+  existing.forEach(function(r){ seen[r.name + "|" + r.date + "|" + r.time] = true; });
+  var added = 0;
+  incoming.forEach(function(r){
+    var k = r.name + "|" + r.date + "|" + r.time;
+    if (!seen[k]){
+      seen[k] = true;
+      existing.push({id: uid(), name: r.name, date: r.date || "", time: r.time || "", note: r.note || ""});
+      added++;
+    }
+  });
+  return added;
+}
+
+function loadLocalData(){
+  try {
+    var raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e){ return null; }
+}
+function saveLocalData(payload){
+  localStorage.setItem(LS_KEY, JSON.stringify(payload));
+}
+function persist(){
+  return encryptObj(state.key, {records: state.data.records, updatedAt: new Date().toISOString()})
+    .then(saveLocalData);
+}
+/* ================= 视图切换 ================= */
+function showApp(){
+  $("lockScreen").classList.add("hidden");
+  $("app").classList.remove("hidden");
+}
+function showLock(){
+  $("app").classList.add("hidden");
+  $("lockScreen").classList.remove("hidden");
+  $("lockPwd").value = "";
+  $("lockHint").textContent = "";
+  $("lockPwd").focus();
+}
+
+/* ================= Toast ================= */
+var toastTimer = null;
+function toast(msg, kind){
+  var t = $("toast");
+  t.textContent = msg;
+  t.className = "show" + (kind ? " " + kind : "");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.className = ""; }, 2600);
+}
+
+/* ================= 数据统计 ================= */
+function computeStats(){
+  var names = {};
+  var risk = 0;
+  state.data.records.forEach(function(r){
+    names[r.name] = (names[r.name] || 0) + 1;
+  });
+  for (var n in names) if (names[n] >= 2) risk++;
+  return {players: Object.keys(names).length, records: state.data.records.length, risk: risk};
+}
+function renderStats(){
+  var st = computeStats();
+  $("stPlayers").textContent = st.players;
+  $("stRecords").textContent = st.records;
+  $("stRisk").textContent = st.risk;
+  var last = state.data.records.slice().sort(function(a, b){
+    return (b.date + b.time).localeCompare(a.date + a.time);
+  })[0];
+  $("stRecent").textContent = last ? last.date : "—";
+}
+
+/* ================= 名单渲染 ================= */
+function groupRecords(){
+  var groups = {};
+  state.data.records.forEach(function(r){ (groups[r.name] = groups[r.name] || []).push(r); });
+  var arr = [];
+  for (var n in groups) arr.push({name: n, recs: groups[n]});
+  // 按最近记录时间倒序
+  arr.sort(function(a, b){
+    var am = a.recs.slice().sort(function(x, y){ return (y.date + y.time).localeCompare(x.date + x.time); })[0];
+    var bm = b.recs.slice().sort(function(x, y){ return (y.date + y.time).localeCompare(x.date + x.time); })[0];
+    return (bm.date + bm.time).localeCompare(am.date + am.time);
+  });
+  return arr;
+}
+function matchPlayer(p, kw){
+  if (!kw) return true;
+  var q = kw.toLowerCase();
+  if (p.name.toLowerCase().indexOf(q) !== -1) return true;
+  for (var i = 0; i < p.recs.length; i++){
+    if ((p.recs[i].note || "").toLowerCase().indexOf(q) !== -1) return true;
+  }
+  return false;
+}
+function badgeFor(count){
+  if (count >= 3) return '<span class="badge badge-risk">高危</span>';
+  if (count === 2) return '<span class="badge badge-multi">多次</span>';
+  return '<span class="badge badge-once">1 次</span>';
+}
+function renderList(){
+  var kw = state.query.trim();
+  var groups = groupRecords().filter(function(p){ return matchPlayer(p, kw); });
+  $("listCount").textContent = groups.length;
+  $("clearSearch").classList.toggle("hidden", !kw);
+
+  var listEl = $("list");
+  if (groups.length === 0){
+    listEl.innerHTML =
+      '<div class="empty"><b>没有匹配的玩家</b>没记过这个人，或者换几个关键词试试</div>';
+    return;
+  }
+  var html = "";
+  groups.forEach(function(p){
+    var count = p.recs.length;
+    var last = p.recs.slice().sort(function(a, b){ return (b.date + b.time).localeCompare(a.date + a.time); })[0];
+    var lastStr = last ? last.date + (last.time ? " " + last.time : "") : "";
+    var open = !!state.expanded[p.name] || !!kw;
+    var recsHtml = "";
+    p.recs.slice().sort(function(a, b){ return (b.date + b.time).localeCompare(a.date + a.time); })
+      .forEach(function(r){
+        recsHtml +=
+          '<div class="rec">' +
+            '<span class="d">' + esc(r.date || "—") + '</span>' +
+            '<span class="t">' + esc(r.time || "") + '</span>' +
+            '<span class="n">' + markHtml(r.note || "", kw) + '</span>' +
+            '<button class="rec-del" data-id="' + esc(r.id) + '" data-name="' + esc(p.name) + '" title="删除这条记录">×</button>' +
+          '</div>';
+      });
+    html +=
+      '<div class="player' + (open ? " open" : "") + '">' +
+        '<button class="player-head" data-name="' + esc(p.name) + '">' +
+          '<span class="player-name">' + markHtml(p.name, kw) + '</span>' +
+          badgeFor(count) +
+          '<span class="player-meta">' + esc(lastStr) + '</span>' +
+          '<span class="caret"></span>' +
+        '</button>' +
+        '<div class="player-body">' + recsHtml + '</div>' +
+      '</div>';
+  });
+  listEl.innerHTML = html;
+}
+
+/* ================= 解锁 ================= */
+function unlock(password){
+  $("lockBtn").disabled = true;
+  $("lockBtn").textContent = "解锁中…";
+  deriveKey(password).then(function(key){
+    var local = loadLocalData();
+    var work = local
+      ? decryptObj(key, local).then(function(d){
+          if (d && d.records){ return {key: key, data: d, migrated: false}; }
+          return null; // 本地有数据但密码不对
+        })
+      : decryptObj(key, INITIAL_ENC).then(function(d){
+          if (d && d.records){
+            ensureIds(d.records);
+            return {key: key, data: d, migrated: true};
+          }
+          return null;
+        });
+    return work;
+  }).then(function(res){
+    if (!res){
+      toast("密码错误，请重试", "err");
+      $("lockHint").textContent = "密码不对，再想想";
+      return;
+    }
+    state.key = res.key;
+    state.data = res.data;
+    state.firstInit = res.migrated;
+    if (res.migrated){
+      return encryptObj(state.key, {records: state.data.records, updatedAt: new Date().toISOString()})
+        .then(saveLocalData);
+    }
+    return null;
+  }).then(function(){
+    showApp();
+    renderStats();
+    renderList();
+    $("searchInput").value = "";
+    if (state.firstInit){
+      toast("初始名单已导入本浏览器，建议尽快修改初始密码", "ok");
+      $("pwdWarn").classList.remove("hidden");
+    } else {
+      $("pwdWarn").classList.toggle("hidden", password !== "cf2026");
+    }
+  }).catch(function(e){
+    console.error(e);
+    toast("解锁失败：" + (e && e.message ? e.message : "未知错误"), "err");
+  }).finally(function(){
+    $("lockBtn").disabled = false;
+    $("lockBtn").textContent = "解锁";
+  });
+}
+
+/* ================= 记一笔 ================= */
+function openAdd(){
+  $("fName").value = "";
+  $("fDate").value = todayStr();
+  $("fTime").value = nowTime();
+  $("fNote").value = "";
+  $("addModal").classList.remove("hidden");
+  $("fName").focus();
+}
+function closeAdd(){ $("addModal").classList.add("hidden"); }
+function saveAdd(){
+  var name = $("fName").value.trim();
+  if (!name){
+    toast("玩家名不能为空", "err");
+    $("fName").focus();
+    return;
+  }
+  var rec = {
+    id: uid(),
+    name: name,
+    date: $("fDate").value || todayStr(),
+    time: $("fTime").value || "",
+    note: $("fNote").value.trim()
+  };
+  state.data.records.push(rec);
+  persist().then(function(){
+    closeAdd();
+    renderStats();
+    state.expanded[name] = true;
+    renderList();
+    toast("已记下：" + name, "ok");
+  });
+}
+
+/* ================= 删除 ================= */
+function delRecord(id, name){
+  if (!confirm("删除这条记录？")) return;
+  state.data.records = state.data.records.filter(function(r){ return r.id !== id; });
+  persist().then(function(){
+    renderStats();
+    renderList();
+    toast("已删除", "ok");
+  });
+}
+
+/* ================= 修改密码 ================= */
+function openPwd(){
+  $("pOld").value = ""; $("pNew").value = ""; $("pNew2").value = "";
+  $("pwdModal").classList.remove("hidden");
+  $("pOld").focus();
+}
+function closePwd(){ $("pwdModal").classList.add("hidden"); }
+function savePwd(){
+  var oldP = $("pOld").value;
+  var newP = $("pNew").value;
+  var newP2 = $("pNew2").value;
+  if (!oldP){ toast("请输入当前密码", "err"); return; }
+  if (newP.length < 6){ toast("新密码至少 6 位", "err"); return; }
+  if (newP !== newP2){ toast("两次输入的新密码不一致", "err"); return; }
+  deriveKey(oldP).then(function(oldKey){
+    var local = loadLocalData();
+    var verify = local
+      ? decryptObj(oldKey, local)
+      : decryptObj(oldKey, INITIAL_ENC);
+    return verify.then(function(d){
+      if (!d || !d.records) return null;
+      return deriveKey(newP).then(function(newKey){
+        return encryptObj(newKey, {records: state.data.records, updatedAt: new Date().toISOString()});
+      });
+    });
+  }).then(function(payload){
+    if (!payload){ toast("当前密码不正确", "err"); return; }
+    saveLocalData(payload);
+    return deriveKey(newP).then(function(k){ state.key = k; });
+  }).then(function(){
+    if (!state.key) return;
+    closePwd();
+    $("pwdWarn").classList.add("hidden");
+    toast("密码已修改", "ok");
+  }).catch(function(e){
+    console.error(e);
+    toast("修改失败：" + (e && e.message ? e.message : "未知错误"), "err");
+  });
+}
+
+/* ================= 导出 ================= */
+function download(filename, content, mime){
+  var blob = new Blob([content], {type: mime || "application/octet-stream"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+}
+function exportBackup(){
+  encryptObj(state.key, {records: state.data.records, updatedAt: new Date().toISOString()})
+    .then(function(payload){
+      download("cf避雷小本本-备份-" + todayStr() + ".json",
+        JSON.stringify(payload), "application/json");
+      toast("加密备份已导出", "ok");
+    });
+}
+function exportCsv(){
+  var rows = [["玩家/账号", "日期", "时间", "行为/备注"]];
+  state.data.records.slice().sort(function(a, b){
+    return (a.date + a.time).localeCompare(b.date + b.time);
+  }).forEach(function(r){
+    rows.push([r.name, r.date, r.time, r.note]);
+  });
+  var csv = rows.map(function(r){
+    return r.map(function(c){
+      c = String(c == null ? "" : c);
+      return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c;
+    }).join(",");
+  }).join("\r\n");
+  var BOM = "\uFEFF";
+  download("cf避雷小本本-明文-" + todayStr() + ".csv", BOM + csv, "text/csv;charset=utf-8");
+  toast("明文 CSV 已导出（注意别外传）", "ok");
+}
+
+/* ================= 导入 ================= */
+var importPayload = null; // {type: 'json'|'csv', raw}
+function openImport(){
+  importPayload = null;
+  var f = $("importFile");
+  f.value = "";
+  f.click();
+}
+function handleImportFile(file){
+  var reader = new FileReader();
+  reader.onload = function(){
+    var text = String(reader.result || "");
+    var name = file.name.toLowerCase();
+    if (name.endsWith(".json")){
+      try {
+        var payload = JSON.parse(text);
+        if (!payload.iv || !payload.ct){ throw new Error("bad"); }
+        importPayload = {type: "json", payload: payload};
+        $("impKind").textContent = "加密备份文件：" + file.name;
+      } catch (e){
+        toast("不是有效的加密备份文件", "err");
+        return;
+      }
+    } else if (name.endsWith(".csv")){
+      importPayload = {type: "csv", text: text};
+      $("impKind").textContent = "明文 CSV 文件：" + file.name;
+    } else {
+      toast("仅支持 .json 备份或 .csv 文件", "err");
+      return;
+    }
+    $("impPwd").value = "";
+    $("impModal").classList.remove("hidden");
+    $("impPwd").focus();
+  };
+  reader.onerror = function(){ toast("读取文件失败", "err"); };
+  reader.readAsText(file);
+}
+function parseCsv(text){
+  // 支持引号包裹，按行解析
+  var rows = [];
+  var cur = "", row = [], inQ = false;
+  text = text.replace(/^\uFEFF/, "");
+  for (var i = 0; i < text.length; i++){
+    var ch = text[i];
+    if (inQ){
+      if (ch === '"'){
+        if (text[i + 1] === '"'){ cur += '"'; i++; }
+        else inQ = false;
+      } else cur += ch;
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === ","){ row.push(cur); cur = ""; }
+      else if (ch === "\n" || ch === "\r"){
+        if (ch === "\r" && text[i + 1] === "\n") i++;
+        row.push(cur); cur = "";
+        if (row.length && row.some(function(c){ return c.trim() !== ""; })) rows.push(row);
+        row = [];
+      } else cur += ch;
+    }
+  }
+  row.push(cur);
+  if (row.length && row.some(function(c){ return c.trim() !== ""; })) rows.push(row);
+  return rows;
+}
+function saveImport(){
+  if (!importPayload){ closeImport(); return; }
+  $("impSave").disabled = true;
+  var pwd = $("impPwd").value;
+  var job;
+  if (importPayload.type === "json"){
+    job = deriveKey(pwd || "cf2026").then(function(k){
+      return decryptObj(k, importPayload.payload);
+    }).then(function(d){
+      if (!d || !d.records) return null;
+      var incoming = ensureIds(d.records.slice());
+      var added = mergeRecords(state.data.records, incoming);
+      return persist().then(function(){ return added; });
+    });
+  } else {
+    // CSV：追加记录
+    var rows = parseCsv(importPayload.text);
+    var header = rows.length ? rows[0].map(function(c){ return c.trim(); }) : [];
+    var nameI = header.indexOf("玩家/账号"); var dateI = header.indexOf("日期");
+    var timeI = header.indexOf("时间"); var noteI = header.indexOf("行为/备注");
+    if (nameI === -1){
+      // 无表头则按列序 0=玩家 1=日期 2=时间 3=备注
+      nameI = 0; dateI = 1; timeI = 2; noteI = 3;
+    }
+    var incoming = [];
+    rows.slice(1).forEach(function(r){
+      var nm = String(r[nameI] == null ? "" : r[nameI]).trim();
+      if (!nm) return;
+      incoming.push({
+        name: nm,
+        date: String(r[dateI] == null ? "" : r[dateI]).trim().slice(0, 10),
+        time: String(r[timeI] == null ? "" : r[timeI]).trim().slice(0, 5),
+        note: String(r[noteI] == null ? "" : r[noteI]).trim()
+      });
+    });
+    var added = mergeRecords(state.data.records, incoming);
+    job = persist().then(function(){ return added; });
+  }
+  job.then(function(added){
+    if (added === null){ toast("密码错误，无法解密该备份", "err"); return; }
+    closeImport();
+    renderStats();
+    renderList();
+    toast("导入完成，新增 " + added + " 条记录", "ok");
+  }).catch(function(e){
+    console.error(e);
+    toast("导入失败：" + (e && e.message ? e.message : "未知错误"), "err");
+  }).finally(function(){
+    $("impSave").disabled = false;
+  });
+}
+function closeImport(){
+  $("impModal").classList.add("hidden");
+  importPayload = null;
+}
+
+/* ================= 事件绑定 ================= */
+$("lockBtn").addEventListener("click", function(){ unlock($("lockPwd").value); });
+$("lockPwd").addEventListener("keydown", function(e){ if (e.key === "Enter") unlock($("lockPwd").value); });
+$("lockBtn2").addEventListener("click", function(){ showLock(); toast("已锁定"); });
+
+$("searchInput").addEventListener("input", function(){
+  state.query = $("searchInput").value;
+  renderList();
+});
+$("clearSearch").addEventListener("click", function(){
+  $("searchInput").value = "";
+  state.query = "";
+  renderList();
+  $("searchInput").focus();
+});
+
+$("list").addEventListener("click", function(e){
+  var head = e.target.closest(".player-head");
+  if (head){
+    var name = head.getAttribute("data-name");
+    state.expanded[name] = !state.expanded[name];
+    renderList();
+    return;
+  }
+  var del = e.target.closest(".rec-del");
+  if (del){
+    delRecord(del.getAttribute("data-id"), del.getAttribute("data-name"));
+  }
+});
+
+$("addBtn").addEventListener("click", openAdd);
+$("fabAdd").addEventListener("click", openAdd);
+$("addCancel").addEventListener("click", closeAdd);
+$("addSave").addEventListener("click", saveAdd);
+$("addModal").addEventListener("click", function(e){ if (e.target === $("addModal")) closeAdd(); });
+
+$("pwdBtn").addEventListener("click", openPwd);
+$("pwdCancel").addEventListener("click", closePwd);
+$("pwdSave").addEventListener("click", savePwd);
+$("pwdModal").addEventListener("click", function(e){ if (e.target === $("pwdModal")) closePwd(); });
+
+$("exportBtn").addEventListener("click", function(e){
+  // 单击导出加密备份；长按/双击导出明文？简化为弹窗选择
+  if (confirm("导出加密备份 JSON？（取消则导出明文 CSV）")) exportBackup();
+  else exportCsv();
+});
+
+$("importBtn").addEventListener("click", openImport);
+$("importFile").addEventListener("change", function(){
+  if (this.files && this.files[0]) handleImportFile(this.files[0]);
+});
+$("impCancel").addEventListener("click", closeImport);
+$("impSave").addEventListener("click", saveImport);
+$("impModal").addEventListener("click", function(e){ if (e.target === $("impModal")) closeImport(); });
+
+// 键盘：Esc 关弹窗
+document.addEventListener("keydown", function(e){
+  if (e.key === "Escape"){
+    if (!$("addModal").classList.contains("hidden")) closeAdd();
+    if (!$("pwdModal").classList.contains("hidden")) closePwd();
+    if (!$("impModal").classList.contains("hidden")) closeImport();
+  }
+});
+
+// 初始焦点
+$("lockPwd").focus();
+</script>
+</body>
+</html>
