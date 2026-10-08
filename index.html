@@ -257,6 +257,19 @@ input,textarea{font-family:inherit}
   font-size:17px;cursor:pointer;line-height:1;transition:color .12s,background .12s;
 }
 .rec-add:hover{color:var(--ok);background:rgba(103,194,58,.14)}
+.rec-gdel{
+  width:30px;height:30px;border:none;border-radius:var(--radius);background:transparent;color:var(--dim);
+  font-size:15px;cursor:pointer;line-height:1;transition:color .12s,background .12s;
+}
+.rec-gdel:hover{color:var(--danger);background:var(--risk-bg)}
+.rec-group{cursor:pointer;transition:background .12s}
+.rec-group:hover{background:var(--panel-2)}
+.rec-group .g-note{font-weight:700;color:var(--txt)}
+.rec-group .g-count{font-style:normal;font-size:12px;font-weight:700;color:var(--warn)}
+.g-arrow{display:inline-block;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--dim);margin-right:7px;transition:transform .15s;vertical-align:1px}
+.rec-group.open .g-arrow{transform:rotate(180deg)}
+.rec-sub{background:var(--bg-soft)}
+.rec .rec-sub-note:empty::before{content:"同款行为";color:var(--dim);font-size:12px;opacity:.7}
 .rec-del{
   width:30px;height:30px;border:none;border-radius:var(--radius);background:transparent;color:var(--dim);
   font-size:15px;cursor:pointer;line-height:1;transition:color .12s,background .12s;
@@ -642,6 +655,7 @@ var state = {
   data: null,
   query: "",
   expanded: {},
+  expandedGroup: {},
   firstInit: false,
   remotePayload: null,   // 从仓库拉到的密文
   remoteLoaded: false,   // 是否成功拉到过仓库
@@ -924,8 +938,19 @@ function renderList(){
     var lastStr = last ? last.date + (last.time ? " " + last.time : "") : "";
     var open = !!state.expanded[p.name] || !!kw;
     var recsHtml = "";
-    p.recs.slice().sort(function(a, b){ return (b.date + b.time).localeCompare(a.date + a.time); })
-      .forEach(function(r){
+    // 按行为备注分组合并：同一玩家、备注相同（除时间外都相同）的记录合并成一行，跨日期也合并
+    var sorted = p.recs.slice().sort(function(a, b){ return (b.date + b.time).localeCompare(a.date + a.time); });
+    var subGroups = [];
+    var subMap = {};
+    sorted.forEach(function(r){
+      var sk = r.note || "";
+      if (!(sk in subMap)){ subMap[sk] = subGroups.length; subGroups.push([]); }
+      subGroups[subMap[sk]].push(r);
+    });
+    subGroups.forEach(function(g){
+      var gnote = g[0].note || "";
+      if (g.length === 1){
+        var r = g[0];
         recsHtml +=
           '<div class="rec">' +
             '<span class="d">' + esc(r.date || "—") + '</span>' +
@@ -936,7 +961,35 @@ function renderList(){
               '<button class="rec-del" data-id="' + esc(r.id) + '" data-name="' + esc(p.name) + '" title="删除这条记录">×</button>' +
             '</span>' +
           '</div>';
-      });
+        return;
+      }
+      var gkey = p.name + "||" + gnote;
+      var gopen = !!state.expandedGroup[gkey];
+      var latest = g[0];
+      recsHtml +=
+        '<div class="rec rec-group' + (gopen ? " open" : "") + '" data-gkey="' + esc(gkey) + '">' +
+          '<span class="d">' + esc(latest.date || "—") + '</span>' +
+          '<span class="t">' + esc(latest.time || "") + '</span>' +
+          '<span class="n"><span class="g-arrow"></span><b class="g-note">' + markHtml(gnote || "（无备注）", kw) + '</b> <em class="g-count">×' + g.length + '</em></span>' +
+          '<span class="rec-ops">' +
+            '<button class="rec-add" data-name="' + esc(p.name) + '" data-note="' + esc(gnote) + '" title="再加一次（同款行为，时间取当前，可改）">＋</button>' +
+            '<button class="rec-gdel" data-name="' + esc(p.name) + '" data-note="' + esc(gnote) + '" title="删除此行为的全部 ' + g.length + ' 条">×</button>' +
+          '</span>' +
+        '</div>';
+      if (gopen){
+        g.forEach(function(r){
+          recsHtml +=
+            '<div class="rec rec-sub">' +
+              '<span class="d">' + esc(r.date || "—") + '</span>' +
+              '<span class="t">' + esc(r.time || "") + '</span>' +
+              '<span class="n rec-sub-note"></span>' +
+              '<span class="rec-ops">' +
+                '<button class="rec-del" data-id="' + esc(r.id) + '" data-name="' + esc(p.name) + '" title="删除这条记录">×</button>' +
+              '</span>' +
+            '</div>';
+        });
+      }
+    });
     html +=
       '<div class="player' + (open ? " open" : "") + '">' +
         '<button class="player-head" data-name="' + esc(p.name) + '">' +
@@ -1072,6 +1125,25 @@ function delRecord(id, name){
     renderList();
     toast("已删除" + (getToken() ? "，已同步" : ""), "ok");
   });
+}
+/* 删除某一行为合并组的全部记录 */
+function delGroup(name, note){
+  var cnt = state.data.records.filter(function(r){ return r.name === name && (r.note || "") === (note || ""); }).length;
+  if (!confirm("删除「" + name + "」的「" + (note || "无备注") + "」全部 " + cnt + " 条记录？")) return;
+  state.data.records = state.data.records.filter(function(r){ return !(r.name === name && (r.note || "") === (note || "")); });
+  delete state.expandedGroup[name + "||" + (note || "")];
+  var p = persistLocal();
+  if (getToken()) p = p.then(function(){ return syncToRemote(); });
+  p.then(function(){
+    renderStats();
+    renderList();
+    toast("已删除 " + cnt + " 条" + (getToken() ? "，已同步" : ""), "ok");
+  });
+}
+/* 展开/收起某一行为合并组 */
+function toggleGroup(gkey){
+  state.expandedGroup[gkey] = !state.expandedGroup[gkey];
+  renderList();
 }
 
 /* ================= 修改密码 ================= */
@@ -1325,6 +1397,16 @@ $("list").addEventListener("click", function(e){
   var addb = e.target.closest(".rec-add");
   if (addb){
     addOnceFor(addb.getAttribute("data-name"), addb.getAttribute("data-note"));
+    return;
+  }
+  var gdel = e.target.closest(".rec-gdel");
+  if (gdel){
+    delGroup(gdel.getAttribute("data-name"), gdel.getAttribute("data-note"));
+    return;
+  }
+  var grp = e.target.closest(".rec-group");
+  if (grp){
+    toggleGroup(grp.getAttribute("data-gkey"));
     return;
   }
   var head = e.target.closest(".player-head");
