@@ -373,7 +373,7 @@ input,textarea{font-family:inherit}
     <p class="lock-sub">输入密码查看名单<br>首次使用输入初始密码 cf2026</p>
     <input type="password" id="lockPwd" placeholder="密码" autocomplete="current-password">
     <button id="lockBtn" class="btn btn-accent">解锁</button>
-    <label class="remember"><input type="checkbox" id="rememberPwd"> 记住密码，本机下次自动解锁</label>
+    <label class="remember"><input type="checkbox" id="rememberPwd"> 记住密码，下次自动填好、点解锁进入</label>
     <p class="lock-load" id="lockLoad">正在连接数据仓库…</p>
     <p class="lock-hint" id="lockHint"></p>
   </div>
@@ -1366,14 +1366,13 @@ $("showToken").addEventListener("change", function(){
   $("syncToken").type = this.checked ? "text" : "password";
 });
 
-/* 记住密码：本机自动解锁（只在本页面加载时执行一次；点「锁定」不会自动解开） */
+/* 记住密码：本机预填密码，点击「解锁」按钮才进入 */
 var savedPwd = localStorage.getItem(PWD_KEY);
 if (savedPwd){
   $("rememberPwd").checked = true;
-  setTimeout(function(){ unlock(savedPwd); }, 700);
-} else {
-  $("lockPwd").focus();
+  $("lockPwd").value = savedPwd;
 }
+$("lockPwd").focus();
 </script>
 </body>
 </html>
