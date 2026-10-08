@@ -227,8 +227,11 @@ input,textarea{font-family:inherit}
   transition:background .12s;width:100%;text-align:left;border:none;background:transparent;color:inherit;font:inherit;
 }
 .player-head:hover{background:var(--panel-2)}
-.player-name{font-size:15.5px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.player-name{font-size:15.5px;font-weight:700;flex:0 1 auto;max-width:42%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .player-name mark{background:var(--mark-bg);color:var(--mark-txt);border-radius:3px;padding:0 1px}
+.player-act{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--sub)}
+.player-act:empty::before{content:"（无备注）";color:var(--dim);opacity:.75}
+.player-act mark{background:var(--mark-bg);color:var(--mark-txt);border-radius:3px;padding:0 1px}
 .badge{flex:none;font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;letter-spacing:.3px}
 .badge-risk{background:var(--risk-bg);color:var(--danger);border:1px solid var(--risk-bd)}
 .badge-multi{background:var(--multi-bg);color:var(--warn);border:1px solid var(--multi-bd)}
@@ -239,7 +242,7 @@ input,textarea{font-family:inherit}
 .player-body{display:none;border-top:1px solid var(--line);background:var(--rec-bg)}
 .player.open .player-body{display:block}
 .rec{
-  display:grid;grid-template-columns:88px 64px 1fr 34px;gap:8px;align-items:center;
+  display:grid;grid-template-columns:88px 64px 1fr 62px;gap:8px;align-items:center;
   padding:10px 16px;border-bottom:1px dashed var(--line);
 }
 .rec:last-child{border-bottom:none}
@@ -248,6 +251,12 @@ input,textarea{font-family:inherit}
 .rec .n{font-size:13px;color:var(--txt);line-height:1.5}
 .rec .n:empty::before{content:"—";color:var(--dim)}
 .rec .n mark{background:var(--mark-bg);color:var(--mark-txt);border-radius:3px;padding:0 1px}
+.rec-ops{display:flex;gap:6px;justify-content:flex-end}
+.rec-add{
+  width:30px;height:30px;border:none;border-radius:var(--radius);background:transparent;color:var(--ok);
+  font-size:17px;cursor:pointer;line-height:1;transition:color .12s,background .12s;
+}
+.rec-add:hover{color:var(--ok);background:rgba(103,194,58,.14)}
 .rec-del{
   width:30px;height:30px;border:none;border-radius:var(--radius);background:transparent;color:var(--dim);
   font-size:15px;cursor:pointer;line-height:1;transition:color .12s,background .12s;
@@ -348,7 +357,7 @@ input,textarea{font-family:inherit}
   .hero{padding:18px 14px 14px}
   .stats{grid-template-columns:repeat(2,1fr)}
   .list-wrap{padding:0 14px 100px}
-  .rec{grid-template-columns:80px 56px 1fr 34px}
+  .rec{grid-template-columns:80px 56px 1fr 62px}
   .rec .n{font-size:14px}
   .player-meta{display:none}
   .stat b{font-size:19px}
@@ -887,9 +896,16 @@ function matchPlayer(p, kw){
   return false;
 }
 function badgeFor(count){
-  if (count >= 3) return '<span class="badge badge-risk">高危</span>';
-  if (count === 2) return '<span class="badge badge-multi">多次</span>';
-  return '<span class="badge badge-once">1 次</span>';
+  var cls = count >= 3 ? "badge-risk" : (count === 2 ? "badge-multi" : "badge-once");
+  return '<span class="badge ' + cls + '">' + count + ' 次</span>';
+}
+function actSummary(p, kw){
+  var last = p.recs.slice().sort(function(a, b){ return (b.date + b.time).localeCompare(a.date + a.time); })[0];
+  if (!last || !last.note) return "";
+  var t = last.note;
+  var arr = Array.from(t);
+  if (arr.length > 40) t = arr.slice(0, 40).join("") + "…";
+  return markHtml(t, kw);
 }
 function renderList(){
   var kw = state.query.trim();
@@ -915,13 +931,17 @@ function renderList(){
             '<span class="d">' + esc(r.date || "—") + '</span>' +
             '<span class="t">' + esc(r.time || "") + '</span>' +
             '<span class="n">' + markHtml(r.note || "", kw) + '</span>' +
-            '<button class="rec-del" data-id="' + esc(r.id) + '" data-name="' + esc(p.name) + '" title="删除这条记录">×</button>' +
+            '<span class="rec-ops">' +
+              '<button class="rec-add" data-name="' + esc(p.name) + '" data-note="' + esc(r.note || "") + '" title="再加一次（同款行为，时间取当前，可改）">＋</button>' +
+              '<button class="rec-del" data-id="' + esc(r.id) + '" data-name="' + esc(p.name) + '" title="删除这条记录">×</button>' +
+            '</span>' +
           '</div>';
       });
     html +=
       '<div class="player' + (open ? " open" : "") + '">' +
         '<button class="player-head" data-name="' + esc(p.name) + '">' +
           '<span class="player-name">' + markHtml(p.name, kw) + '</span>' +
+          '<span class="player-act">' + actSummary(p, kw) + '</span>' +
           badgeFor(count) +
           '<span class="player-meta">' + esc(lastStr) + '</span>' +
           '<span class="caret"></span>' +
@@ -1014,6 +1034,15 @@ function openAdd(){
   $("fNote").value = "";
   $("addModal").classList.remove("hidden");
   $("fName").focus();
+}
+/* 再加一次：预填玩家名与同款行为，时间取当前，可改后保存 */
+function addOnceFor(name, note){
+  $("fName").value = name || "";
+  $("fDate").value = todayStr();
+  $("fTime").value = nowTime();
+  $("fNote").value = note || "";
+  $("addModal").classList.remove("hidden");
+  $("fNote").focus();
 }
 function closeAdd(){ $("addModal").classList.add("hidden"); }
 function saveAdd(){
@@ -1293,6 +1322,11 @@ $("clearSearch").addEventListener("click", function(){
 });
 
 $("list").addEventListener("click", function(e){
+  var addb = e.target.closest(".rec-add");
+  if (addb){
+    addOnceFor(addb.getAttribute("data-name"), addb.getAttribute("data-note"));
+    return;
+  }
   var head = e.target.closest(".player-head");
   if (head){
     var name = head.getAttribute("data-name");
