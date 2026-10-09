@@ -37,9 +37,9 @@
 2. 输入密码解锁（首次使用的初始密码见页面锁定屏提示，**进去后第一件事：修改密码**）
 3. 右上角「记一笔」随手记下捣乱的人，点玩家可展开明细、删除记录
 
-### 开启多设备同步（可选，推荐）
+### 多设备同步（开箱即用）
 
-在「设置」里粘贴一个 GitHub **fine-grained PAT 令牌**（只给本仓库的 Contents 读写权限），之后所有更新都会自动写回仓库，换设备打开就是最新名单。令牌只存在你自己的浏览器里，不经过任何第三方。
+无需任何配置：保存 / 删除 / 修改密码后，名单会加密后自动提交，由仓库内置的 GitHub Actions 工作流写入 `data/encrypted.json`，换设备打开就是最新名单。整个同步过程不需要 GitHub 令牌，也没有任何需要注册的账号。
 
 ## 安全说明
 
@@ -52,7 +52,7 @@
 
 - 单文件 HTML + 原生 JavaScript，无框架、无构建，一个文件跑通全部
 - Web Crypto API（PBKDF2-SHA256 + AES-256-GCM）加解密，纯浏览器端完成
-- 数据存于 `data/encrypted.json`，读写走 GitHub Contents API（令牌写回 + SHA 冲突重试）
+- 数据存于 `data/encrypted.json`：读取走 GitHub raw/Contents API（公开可读），写入通过创建匿名 issue 提交，由 `.github/workflows/sync.yml` 工作流自动落库（零令牌、串行写回、写前自动合并防覆盖）
 - 4 套主题基于 CSS 变量，一键切换并记住选择
 
 ## 免责声明

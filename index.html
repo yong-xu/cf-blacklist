@@ -319,6 +319,21 @@ input,textarea{font-family:inherit}
 }
 .pwd-hint{color:var(--dim);font-size:11.5px;margin-top:8px;line-height:1.6}
 
+/* 弹窗右上角固定关闭按钮：sticky 定位，滚动内容时始终固定在右上角 */
+.modal-close-wrap{
+  position:-webkit-sticky;position:sticky;top:0;z-index:6;
+  display:flex;justify-content:flex-end;
+  height:0;
+}
+.modal-close{
+  width:36px;height:36px;margin-top:8px;
+  border-radius:var(--radius);border:1px solid var(--line-2);
+  background:var(--panel-2);color:var(--sub);font-size:22px;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:color .15s,border-color .15s,background .15s;flex:none;
+}
+.modal-close:hover{color:var(--danger);border-color:var(--danger);background:var(--risk-bg)}
+
 /* ===== 设置面板 ===== */
 .set-section{border-top:1px solid var(--line);padding:16px 0 4px;margin-top:4px}
 .set-section:first-child{border-top:none;padding-top:0;margin-top:0}
@@ -357,7 +372,7 @@ input,textarea{font-family:inherit}
 #toast.ok{border-color:var(--ok)}
 #toast.err{border-color:var(--danger)}
 
-/* 记住密码 / 显示令牌等小复选框 */
+/* 记住密码小复选框 */
 .remember{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--dim);margin-top:10px;cursor:pointer;user-select:none}
 .remember input{width:15px;height:15px;accent-color:var(--accent);margin:0;flex:none}
 
@@ -474,6 +489,7 @@ input,textarea{font-family:inherit}
 <!-- ===== 设置弹窗 ===== -->
 <div id="setModal" class="modal hidden">
   <div class="modal-box">
+    <div class="modal-close-wrap"><button id="setClose" class="modal-close" aria-label="关闭设置" title="关闭">×</button></div>
     <h2><span class="bar"></span>设置</h2>
 
     <div class="set-section">
@@ -484,17 +500,9 @@ input,textarea{font-family:inherit}
     <div class="set-section">
       <div class="set-title"><span class="bar"></span>云端同步</div>
       <div class="sync-row">
-        <span class="sync-status"><span class="sync-dot" id="syncDot2"></span><span id="syncText">未配置</span></span>
-        <button id="syncTest" class="btn btn-ghost" style="margin-left:auto;padding:6px 12px;font-size:12px">测试连接</button>
+        <span class="sync-status"><span class="sync-dot" id="syncDot2"></span><span id="syncText">自动同步</span></span>
       </div>
-      <label>GitHub 访问令牌（PAT）——只存本浏览器
-        <div class="input-row">
-          <input type="password" id="syncToken" placeholder="粘贴 fine-grained PAT，如 github_pat_xxx" autocomplete="off">
-          <button id="syncSave" class="btn btn-accent">保存</button>
-        </div>
-      </label>
-      <label class="remember" style="margin:6px 0 0"><input type="checkbox" id="showToken"> 显示令牌内容（粘贴后核对用）</label>
-      <p class="pwd-hint">生成方法：github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token → 仓库只选 cf-blacklist → 权限勾 Contents: Read and write。令牌只保存在你自己的浏览器里，用于把网页上的更新写回仓库。</p>
+      <p class="pwd-hint">名单加密后通过仓库内置的同步通道自动落库（GitHub Actions），无需任何令牌或配置。任意设备上保存/删除/改密都会自动提交，其他设备打开即最新。</p>
     </div>
 
     <div class="set-section">
@@ -556,7 +564,6 @@ input,textarea{font-family:inherit}
 var SALT_B64 = "Y2YtYmxhY2tsaXN0LXNhbHQtdjE=";
 var ITER = 100000;
 var LS_KEY = "cf-blacklist-data-v1";
-var TOKEN_KEY = "cf-sync-token";
 var PWD_KEY = "cf-pwd-remember";
 var THEME_KEY = "cf-theme";
 var LAST_SYNC_KEY = "cf-last-sync";
@@ -697,7 +704,6 @@ function persistLocal(){
   return encryptObj(state.key, {records: state.data.records, updatedAt: new Date().toISOString()})
     .then(saveLocalData);
 }
-function getToken(){ return localStorage.getItem(TOKEN_KEY) || ""; }
 
 /* ================= 云端：拉取 ================= */
 function fetchRemoteData(){
@@ -729,52 +735,50 @@ function fetchRemoteData(){
   });
 }
 
-/* ================= 云端：写回 ================= */
-function getRemoteSha(token){
-  return fetch("https://api.github.com/repos/" + REPO + "/contents/" + DATA_PATH, {
-    headers: {
-      "Authorization": "Bearer " + token,
-      "Accept": "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28"
-    }
-  }).then(function(r){
-    if (r.status === 404) return null;
-    if (!r.ok) throw new Error("get sha http " + r.status);
-    return r.json().then(function(j){ return j.sha; });
-  });
+/* ================= 云端：写回（匿名 Issue + Actions 自动落库，无需令牌） ================= */
+// 写回前先拉取仓库最新数据并合并，避免覆盖另一端刚写入的记录
+function mergeRemoteBeforeSync(){
+  return fetchRemoteData().then(function(remote){
+    if (!remote || !remote.records) return null;
+    return decryptObj(state.key, remote).then(function(rd){
+      if (!rd || !rd.records) return null;
+      var added = mergeRecords(rd.records, state.data.records);
+      if (added > 0){
+        state.data.records = rd.records;
+        if (rd.updatedAt) state.data.updatedAt = rd.updatedAt;
+        renderStats();
+        renderList();
+      }
+      return added;
+    });
+  }).catch(function(){ return null; });
 }
-function syncToRemote(){
-  var token = getToken();
-  if (!token){
-    setSyncUI(false, false);
-    return Promise.resolve(false);
-  }
+// 把当前名单加密后作为匿名 issue 提交，由仓库的 GitHub Actions 工作流写入 data/encrypted.json
+function submitSyncPayload(){
   return encryptObj(state.key, {records: state.data.records, updatedAt: new Date().toISOString()})
     .then(function(payload){
-      var content = b64ToBytesSafe(JSON.stringify(payload));
-      return getRemoteSha(token).then(function(sha){
-        var body = {message: "同步数据 " + new Date().toLocaleString("zh-CN", {hour12: false}), content: content, branch: "main"};
-        if (sha) body.sha = sha;
-        return fetch("https://api.github.com/repos/" + REPO + "/contents/" + DATA_PATH, {
-          method: "PUT",
-          headers: {
-            "Authorization": "Bearer " + token,
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28"
-          },
-          body: JSON.stringify(body)
-        });
+      return fetch("https://api.github.com/repos/" + REPO + "/issues", {
+        method: "POST",
+        headers: {
+          "Accept": "application/vnd.github+json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({title: "sync", body: "```json\n" + JSON.stringify(payload) + "\n```"})
       });
     })
     .then(function(r){
-      if (!r.ok){
-        // 409 冲突：sha 过期，重取一次
-        if (r.status === 409){
-          return retrySyncAfterConflict(token);
-        }
-        throw new Error("sync http " + r.status);
-      }
+      if (!r.ok) throw new Error("submit http " + r.status);
+      return r.json();
+    })
+    .then(function(issue){ return !!(issue && issue.number); });
+}
+// 同步入口：总是执行（无需令牌）。成功 = 已提交，仓库约 1 分钟内自动落库
+function syncToRemote(){
+  setSyncUI(null, false);
+  return mergeRemoteBeforeSync()
+    .then(submitSyncPayload)
+    .then(function(ok){
+      if (!ok) throw new Error("empty issue response");
       localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
       setSyncUI(true, false);
       return true;
@@ -785,64 +789,23 @@ function syncToRemote(){
       return false;
     });
 }
-function retrySyncAfterConflict(token){
-  return encryptObj(state.key, {records: state.data.records, updatedAt: new Date().toISOString()})
-    .then(function(payload){
-      return getRemoteSha(token).then(function(sha){
-        if (!sha) return null;
-        var body = {message: "同步数据(重试) " + new Date().toLocaleString("zh-CN", {hour12: false}), content: b64ToBytesSafe(JSON.stringify(payload)), branch: "main", sha: sha};
-        return fetch("https://api.github.com/repos/" + REPO + "/contents/" + DATA_PATH, {
-          method: "PUT",
-          headers: {
-            "Authorization": "Bearer " + token,
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28"
-          },
-          body: JSON.stringify(body)
-        });
-      });
-    })
-    .then(function(r){
-      if (!r || !r.ok) throw new Error("retry sync failed");
-      localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString());
-      setSyncUI(true, false);
-      return true;
-    });
-}
-function b64ToBytesSafe(str){
-  var enc = new TextEncoder();
-  return bytesToB64(enc.encode(str));
-}
-function testToken(){
-  var token = getToken();
-  if (!token) return Promise.resolve({ok: false, msg: "未配置令牌"});
-  return fetch("https://api.github.com/repos/" + REPO + "/contents/" + DATA_PATH, {
-    headers: {"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json"}
-  }).then(function(r){
-    if (r.status === 200) return {ok: true, msg: "令牌有效，可读写仓库"};
-    if (r.status === 403) return {ok: false, msg: "令牌权限不足（需 Contents 读写）"};
-    if (r.status === 401) return {ok: false, msg: "令牌无效或已过期"};
-    return {ok: false, msg: "连接失败（HTTP " + r.status + "）"};
-  }).catch(function(){ return {ok: false, msg: "网络无法连接 GitHub"}; });
-}
 function setSyncUI(on, err){
   state.syncFailed = !!err;
   var dot = $("syncDot"), dot2 = $("syncDot2"), txt = $("syncText"), brand = $("brandSync");
   if (!dot) return;
   dot.className = "sync-dot" + (err ? " err" : (on ? " on" : ""));
-  dot2.className = "sync-dot" + (err ? " err" : (on ? " on" : ""));
+  if (dot2) dot2.className = "sync-dot" + (err ? " err" : (on ? " on" : ""));
   if (err){
-    txt.textContent = "上次同步失败，请检查令牌";
+    txt.textContent = "提交失败，请检查网络后重试";
     brand.textContent = "同步失败，数据仅存本机";
   } else if (on){
     var last = localStorage.getItem(LAST_SYNC_KEY);
     var t = last ? new Date(last).toLocaleString("zh-CN", {hour12: false}).slice(5, 16) : "";
-    txt.textContent = "已连接，最近同步 " + t;
+    txt.textContent = "自动同步，最近提交 " + t;
     brand.textContent = "云端已同步 " + t;
   } else {
-    txt.textContent = "未配置令牌，数据仅存本机";
-    brand.textContent = "云端同步未配置";
+    txt.textContent = "自动同步：保存后自动写入仓库，无需配置";
+    brand.textContent = "自动云端同步";
   }
 }
 /* ================= 视图切换 ================= */
@@ -1048,7 +1011,7 @@ function unlock(password){
       localStorage.removeItem(PWD_KEY);
     }
     return persistLocal().then(function(){
-      if (res.extra > 0 && getToken()) return syncToRemote();
+      if (res.extra > 0) return syncToRemote();
       return null;
     });
   }).then(function(){
@@ -1063,12 +1026,10 @@ function unlock(password){
     } else {
       $("pwdWarn").classList.toggle("hidden", password !== "cf2026");
     }
-    setSyncUI(!!getToken(), false);
-    if (!getToken()){
-      if (!localStorage.getItem("cf-tip-shown")){
-        toast("点右上角「设置」配置 GitHub 令牌，手机和其他设备才能同步", "");
-        localStorage.setItem("cf-tip-shown", "1");
-      }
+    setSyncUI(true, state.syncFailed);
+    if (!localStorage.getItem("cf-tip-shown")){
+      toast("名单自动同步到仓库，任何设备打开即最新", "");
+      localStorage.setItem("cf-tip-shown", "1");
     }
   }).catch(function(e){
     console.error(e);
@@ -1103,14 +1064,13 @@ function saveAdd(){
   if (!name){ toast("玩家名不能为空", "err"); $("fName").focus(); return; }
   var rec = {id: uid(), name: name, date: $("fDate").value || todayStr(), time: $("fTime").value || "", note: $("fNote").value.trim()};
   state.data.records.push(rec);
-  var p = persistLocal();
-  if (getToken()) p = p.then(function(){ return syncToRemote(); });
-  p.then(function(){
+  persistLocal().then(function(){ return syncToRemote(); })
+  .then(function(ok){
     closeAdd();
     renderStats();
     state.expanded[name] = true;
     renderList();
-    toast("已记下：" + name + (getToken() ? "，已同步" : "（未配置同步）"), "ok");
+    toast("已记下：" + name + (ok ? "，已提交同步" : "，同步提交失败（数据已存本机）"), ok ? "ok" : "err");
   });
 }
 
@@ -1118,12 +1078,11 @@ function saveAdd(){
 function delRecord(id, name){
   if (!confirm("删除这条记录？")) return;
   state.data.records = state.data.records.filter(function(r){ return r.id !== id; });
-  var p = persistLocal();
-  if (getToken()) p = p.then(function(){ return syncToRemote(); });
-  p.then(function(){
+  persistLocal().then(function(){ return syncToRemote(); })
+  .then(function(ok){
     renderStats();
     renderList();
-    toast("已删除" + (getToken() ? "，已同步" : ""), "ok");
+    toast("已删除" + (ok ? "，已提交同步" : "，同步提交失败（数据已存本机）"), ok ? "ok" : "err");
   });
 }
 /* 删除某一行为合并组的全部记录 */
@@ -1132,12 +1091,11 @@ function delGroup(name, note){
   if (!confirm("删除「" + name + "」的「" + (note || "无备注") + "」全部 " + cnt + " 条记录？")) return;
   state.data.records = state.data.records.filter(function(r){ return !(r.name === name && (r.note || "") === (note || "")); });
   delete state.expandedGroup[name + "||" + (note || "")];
-  var p = persistLocal();
-  if (getToken()) p = p.then(function(){ return syncToRemote(); });
-  p.then(function(){
+  persistLocal().then(function(){ return syncToRemote(); })
+  .then(function(ok){
     renderStats();
     renderList();
-    toast("已删除 " + cnt + " 条" + (getToken() ? "，已同步" : ""), "ok");
+    toast("已删除 " + cnt + " 条" + (ok ? "，已提交同步" : "，同步提交失败（数据已存本机）"), ok ? "ok" : "err");
   });
 }
 /* 展开/收起某一行为合并组 */
@@ -1168,20 +1126,19 @@ function savePwd(){
       });
     });
   }).then(function(payload){
-    if (!payload){ toast("当前密码不正确", "err"); return; }
+    if (!payload){ toast("当前密码不正确", "err"); return null; }
     saveLocalData(payload);
-    return deriveKey(newP).then(function(k){ state.key = k; });
-  }).then(function(){
-    if (!state.key) return;
-    if (getToken()) return syncToRemote();
-    return null;
-  }).then(function(){
-    if (!state.key) return;
+    return deriveKey(newP).then(function(k){ state.key = k; return true; });
+  }).then(function(ok2){
+    if (!ok2 || !state.key) return null;
+    return syncToRemote();
+  }).then(function(ok){
+    if (!state.key || ok === null) return;
     closePwd();
     $("pwdWarn").classList.add("hidden");
     // 若此前记住了密码，同步更新为新密码
     if (localStorage.getItem(PWD_KEY)) localStorage.setItem(PWD_KEY, newP);
-    toast("密码已修改" + (getToken() ? "，已重新加密同步" : ""), "ok");
+    toast("密码已修改" + (ok ? "，已重新加密同步" : "，同步提交失败（本机已生效）"), ok ? "ok" : "err");
   }).catch(function(e){
     console.error(e);
     toast("修改失败：" + (e && e.message ? e.message : "未知错误"), "err");
@@ -1312,14 +1269,14 @@ function saveImport(){
   }
   job.then(function(added){
     if (added === null){ toast("密码错误，无法解密该备份", "err"); return; }
-    if (getToken()) return syncToRemote().then(function(){ return added; });
-    return added;
-  }).then(function(added){
-    if (added === null) return;
+    return syncToRemote().then(function(ok){ return {added: added, ok: ok}; });
+  }).then(function(res){
+    if (res === null || res === undefined) return;
+    if (res.added === null) return;
     closeImport();
     renderStats();
     renderList();
-    toast("导入完成，新增 " + added + " 条记录" + (getToken() ? "，已同步" : ""), "ok");
+    toast("导入完成，新增 " + res.added + " 条记录" + (res.ok ? "，已提交同步" : "，同步提交失败（数据已存本机）"), res.ok ? "ok" : "err");
   }).catch(function(e){
     console.error(e);
     toast("导入失败：" + (e && e.message ? e.message : "未知错误"), "err");
@@ -1357,25 +1314,10 @@ function renderThemeGrid(){
 /* ================= 设置面板 ================= */
 function openSet(){
   renderThemeGrid();
-  $("syncToken").value = getToken();
   $("setModal").classList.remove("hidden");
-  setSyncUI(!!getToken(), state.syncFailed);
+  setSyncUI(state.syncFailed ? false : true, state.syncFailed);
 }
 function closeSet(){ $("setModal").classList.add("hidden"); }
-function saveToken(){
-  var v = $("syncToken").value.trim();
-  if (!v){ localStorage.removeItem(TOKEN_KEY); setSyncUI(false, false); toast("已清除令牌", "ok"); return; }
-  localStorage.setItem(TOKEN_KEY, v);
-  $("syncSave").disabled = true;
-  $("syncSave").textContent = "验证中…";
-  testToken().then(function(res){
-    $("syncSave").disabled = false;
-    $("syncSave").textContent = "保存";
-    toast(res.msg, res.ok ? "ok" : "err");
-    if (res.ok) setSyncUI(true, false);
-    else setSyncUI(false, true);
-  });
-}
 
 /* ================= 事件绑定 ================= */
 $("lockBtn").addEventListener("click", function(){ unlock($("lockPwd").value); });
@@ -1427,16 +1369,12 @@ $("addSave").addEventListener("click", saveAdd);
 $("addModal").addEventListener("click", function(e){ if (e.target === $("addModal")) closeAdd(); });
 
 $("setBtn").addEventListener("click", openSet);
+$("setClose").addEventListener("click", closeSet);
 $("setModal").addEventListener("click", function(e){ if (e.target === $("setModal")) closeSet(); });
 $("themeGrid").addEventListener("click", function(e){
   var card = e.target.closest(".theme-card");
   if (card) applyTheme(card.getAttribute("data-tid"));
 });
-$("syncSave").addEventListener("click", saveToken);
-$("syncTest").addEventListener("click", function(){
-  testToken().then(function(res){ toast(res.msg, res.ok ? "ok" : "err"); });
-});
-
 $("pwdBtn").addEventListener("click", openPwd);
 $("pwdCancel").addEventListener("click", closePwd);
 $("pwdSave").addEventListener("click", savePwd);
@@ -1476,11 +1414,6 @@ fetchRemoteData().then(function(p){
     ? "数据仓库已连接，输入密码即可查看"
     : "仓库连接失败，将使用本机缓存（离线数据）";
 }).catch(function(){ $("lockLoad").textContent = "仓库连接失败，将使用本机缓存"; });
-
-/* 显示令牌内容切换 */
-$("showToken").addEventListener("change", function(){
-  $("syncToken").type = this.checked ? "text" : "password";
-});
 
 /* 记住密码：本机预填密码，点击「解锁」按钮才进入 */
 var savedPwd = localStorage.getItem(PWD_KEY);
