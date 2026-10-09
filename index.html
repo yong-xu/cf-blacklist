@@ -664,9 +664,9 @@ var state = {
   expanded: {},
   expandedGroup: {},
   firstInit: false,
-  remotePayload: null,   // 从仓库拉到的密文
-  remoteLoaded: false,   // 是否成功拉到过仓库
-  remoteOk: false,       // 仓库拉取是否成功
+  remotePayloads: [],  // 从仓库拉到的密文源（基线 + 最新 Issue）
+  remoteLoaded: false, // 是否成功拉到过仓库
+  remoteOk: false,     // 仓库拉取是否成功
   syncFailed: false
 };
 
@@ -691,6 +691,53 @@ function mergeRecords(existing, incoming){
   });
   return added;
 }
+/* 按时间从新到旧合并多个数据源（基线 + 各 Issue + 本地）：
+   最新数据为基础，旧数据只补充"不存在且未被删除"的记录；
+   墓碑(deletedIds)取并集，保证删除不会被旧数据复活 */
+function mergeSourcesByTime(sources){
+  var valid = sources.filter(function(s){ return s && Array.isArray(s.records); });
+  if (!valid.length) return null;
+  valid.sort(function(a, b){
+    return String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""));
+  });
+  var base = valid[0];
+  var recMap = {}, delSet = {}, order = [];
+  base.records.forEach(function(r){
+    if (!r.id) r.id = uid();
+    recMap[r.id] = r;
+    order.push(r.id);
+  });
+  (base.deletedIds || []).forEach(function(id){ delSet[id] = true; });
+  var added = 0;
+  for (var i = 1; i < valid.length; i++){
+    var src = valid[i];
+    (src.deletedIds || []).forEach(function(id){ if (!delSet[id]) delSet[id] = true; });
+    src.records.forEach(function(r){
+      if (!r.id) r.id = uid();
+      if (!recMap[r.id] && !delSet[r.id]){
+        recMap[r.id] = r;
+        order.push(r.id);
+        added++;
+      }
+    });
+  }
+  return {
+    records: order.map(function(id){ return recMap[id]; }),
+    updatedAt: base.updatedAt || "",
+    deletedIds: Object.keys(delSet),
+    added: added
+  };
+}
+/* 从同步 Issue 正文中解析加密载荷（```json 代码块） */
+function parseSyncPayload(body){
+  if (!body || typeof body !== "string") return null;
+  var m = body.match(/```json\s*([\s\S]*?)```/);
+  if (!m) return null;
+  try {
+    var p = JSON.parse(m[1]);
+    return (p && p.iv && p.ct) ? p : null;
+  } catch (e){ return null; }
+}
 function loadLocalData(){
   try {
     var raw = localStorage.getItem(LS_KEY);
@@ -701,12 +748,13 @@ function saveLocalData(payload){
   localStorage.setItem(LS_KEY, JSON.stringify(payload));
 }
 function persistLocal(){
-  return encryptObj(state.key, {records: state.data.records, updatedAt: new Date().toISOString()})
+  return encryptObj(state.key, {records: state.data.records, updatedAt: new Date().toISOString(), deletedIds: state.data.deletedIds || []})
     .then(saveLocalData);
 }
 
-/* ================= 云端：拉取 ================= */
-function fetchRemoteData(){
+/* ================= 云端：拉取（基线文件 + 最新 Issue，秒级同步） ================= */
+// 基线文件（由 Actions 落库，稳定基线）
+function fetchBaseline(){
   // 依次尝试 api.github.com 与 raw.githubusercontent.com
   var attempts = DATA_URLS.map(function(url, i){
     return function(){
@@ -734,23 +782,59 @@ function fetchRemoteData(){
     return null;
   });
 }
+// 最新同步 Issue（秒级通道：修改提交后立即可见，无需等 Actions 落库）
+function fetchSyncIssues(){
+  return fetch("https://api.github.com/repos/" + REPO + "/issues?state=all&sort=created&direction=desc&per_page=20", {
+    cache: "no-store",
+    headers: {Accept: "application/vnd.github+json"}
+  })
+  .then(function(r){
+    if (!r.ok) throw new Error("http " + r.status);
+    return r.json();
+  })
+  .then(function(list){
+    if (!Array.isArray(list)) return [];
+    return list.filter(function(it){ return it.title === "sync" && it.body; })
+      .slice(0, 10)
+      .map(function(it){ return parseSyncPayload(it.body); })
+      .filter(Boolean);
+  })
+  .catch(function(){ return []; });
+}
+// 所有远程源（基线 + Issue），按时间新→旧
+function fetchRemoteSources(){
+  return Promise.all([fetchBaseline(), fetchSyncIssues()]).then(function(r){
+    return {baseline: r[0], issues: r[1]};
+  });
+}
 
-/* ================= 云端：写回（匿名 Issue + Actions 自动落库，无需令牌） ================= */
-// 写回前先拉取仓库最新数据并合并，避免覆盖另一端刚写入的记录
+/* ================= 云端：写回（匿名 Issue 秒级同步 + Actions 落库基线，无需令牌） ================= */
+// 写回前先拉取仓库最新数据（基线 + 最新 Issue）并合并，避免覆盖另一端刚写入的记录
 function mergeRemoteBeforeSync(){
-  return fetchRemoteData().then(function(remote){
-    if (!remote || !remote.records) return null;
-    return decryptObj(state.key, remote).then(function(rd){
-      if (!rd || !rd.records) return null;
-      var added = mergeRecords(rd.records, state.data.records);
-      if (added > 0){
-        state.data.records = rd.records;
-        if (rd.updatedAt) state.data.updatedAt = rd.updatedAt;
-        renderStats();
-        renderList();
-      }
-      return added;
-    });
+  return fetchRemoteSources().then(function(src){
+    var sources = [];
+    if (src.baseline) sources.push(src.baseline);
+    sources = sources.concat(src.issues);
+    if (!sources.length) return null;
+    return Promise.all(sources.map(function(p){ return decryptObj(state.key, p); }))
+      .then(function(decs){
+        var valid = decs.filter(function(d){ return d && Array.isArray(d.records); });
+        if (!valid.length) return null;
+        valid.push({
+          records: state.data.records,
+          updatedAt: state.data.updatedAt || "",
+          deletedIds: state.data.deletedIds || []
+        });
+        var merged = mergeSourcesByTime(valid);
+        if (!merged) return null;
+        var changed = merged.added > 0 || (merged.deletedIds.length !== (state.data.deletedIds || []).length);
+        if (changed){
+          state.data = merged;
+          renderStats();
+          renderList();
+        }
+        return merged;
+      });
   }).catch(function(){ return null; });
 }
 // 把当前名单加密后作为匿名 issue 提交，由仓库的 GitHub Actions 工作流写入 data/encrypted.json
@@ -772,7 +856,7 @@ function submitSyncPayload(){
     })
     .then(function(issue){ return !!(issue && issue.number); });
 }
-// 同步入口：总是执行（无需令牌）。成功 = 已提交，仓库约 1 分钟内自动落库
+// 同步入口：总是执行（无需令牌）。创建 Issue 即秒级同步，Actions 自动落库为基线
 function syncToRemote(){
   setSyncUI(null, false);
   return mergeRemoteBeforeSync()
@@ -796,15 +880,15 @@ function setSyncUI(on, err){
   dot.className = "sync-dot" + (err ? " err" : (on ? " on" : ""));
   if (dot2) dot2.className = "sync-dot" + (err ? " err" : (on ? " on" : ""));
   if (err){
-    txt.textContent = "提交失败，请检查网络后重试";
+    txt.textContent = "同步失败，请检查网络后重试";
     brand.textContent = "同步失败，数据仅存本机";
   } else if (on){
     var last = localStorage.getItem(LAST_SYNC_KEY);
     var t = last ? new Date(last).toLocaleString("zh-CN", {hour12: false}).slice(5, 16) : "";
-    txt.textContent = "自动同步，最近提交 " + t;
+    txt.textContent = "已同步到云端 " + t;
     brand.textContent = "云端已同步 " + t;
   } else {
-    txt.textContent = "自动同步：保存后自动写入仓库，无需配置";
+    txt.textContent = "自动同步：修改后立即同步，无需配置";
     brand.textContent = "自动云端同步";
   }
 }
@@ -975,26 +1059,27 @@ function unlock(password){
   $("lockBtn").textContent = "解锁中…";
   deriveKey(password).then(function(k){
     key = k;
-    var remote = state.remotePayload ? decryptObj(k, state.remotePayload) : Promise.resolve(null);
+    var sources = state.remotePayloads || [];
+    var decRemote = sources.map(function(p){ return decryptObj(k, p); });
     var local = loadLocalData() ? decryptObj(k, loadLocalData()) : Promise.resolve(null);
-    return Promise.all([remote, local]);
-  }).then(function(results){
-    var remote = results[0], local = results[1];
-    var hasRemote = !!(remote && remote.records);
-    var hasLocal = !!(local && local.records);
-    if (!hasRemote && !hasLocal){
+    return Promise.all(decRemote.concat([local]));
+  }).then(function(decList){
+    var remoteCount = (state.remotePayloads || []).length;
+    var remotes = decList.slice(0, remoteCount).filter(function(d){ return d && Array.isArray(d.records); });
+    var local = decList[remoteCount];
+    var hasLocal = !!(local && Array.isArray(local.records));
+    if (remotes.length === 0 && !hasLocal){
       return decryptObj(key, INITIAL_ENC).then(function(d){
         if (!d || !d.records) return null;
         ensureIds(d.records);
         return {data: d, migrated: true, extra: 0};
       });
     }
-    if (hasRemote && hasLocal){
-      var extra = mergeRecords(remote.records, local.records);
-      return {data: remote, migrated: false, extra: extra};
-    }
-    if (hasRemote) return {data: remote, migrated: false, extra: 0};
-    return {data: local, migrated: false, extra: 0};
+    var all = remotes.slice();
+    if (hasLocal) all.push(local);
+    var merged = mergeSourcesByTime(all);
+    if (!merged) return null;
+    return {data: merged, migrated: false, extra: merged.added};
   }).then(function(res){
     if (!res){
       toast("密码错误，请重试", "err");
@@ -1070,7 +1155,7 @@ function saveAdd(){
     renderStats();
     state.expanded[name] = true;
     renderList();
-    toast("已记下：" + name + (ok ? "，已提交同步" : "，同步提交失败（数据已存本机）"), ok ? "ok" : "err");
+    toast("已记下：" + name + (ok ? "，已同步到云端" : "，同步失败（数据已存本机）"), ok ? "ok" : "err");
   });
 }
 
@@ -1078,24 +1163,29 @@ function saveAdd(){
 function delRecord(id, name){
   if (!confirm("删除这条记录？")) return;
   state.data.records = state.data.records.filter(function(r){ return r.id !== id; });
+  if (!state.data.deletedIds) state.data.deletedIds = [];
+  if (state.data.deletedIds.indexOf(id) < 0) state.data.deletedIds.push(id);
   persistLocal().then(function(){ return syncToRemote(); })
   .then(function(ok){
     renderStats();
     renderList();
-    toast("已删除" + (ok ? "，已提交同步" : "，同步提交失败（数据已存本机）"), ok ? "ok" : "err");
+    toast("已删除" + (ok ? "，已同步到云端" : "，同步失败（数据已存本机）"), ok ? "ok" : "err");
   });
 }
 /* 删除某一行为合并组的全部记录 */
 function delGroup(name, note){
   var cnt = state.data.records.filter(function(r){ return r.name === name && (r.note || "") === (note || ""); }).length;
   if (!confirm("删除「" + name + "」的「" + (note || "无备注") + "」全部 " + cnt + " 条记录？")) return;
+  var removed = state.data.records.filter(function(r){ return r.name === name && (r.note || "") === (note || ""); });
   state.data.records = state.data.records.filter(function(r){ return !(r.name === name && (r.note || "") === (note || "")); });
+  if (!state.data.deletedIds) state.data.deletedIds = [];
+  removed.forEach(function(r){ if (state.data.deletedIds.indexOf(r.id) < 0) state.data.deletedIds.push(r.id); });
   delete state.expandedGroup[name + "||" + (note || "")];
   persistLocal().then(function(){ return syncToRemote(); })
   .then(function(ok){
     renderStats();
     renderList();
-    toast("已删除 " + cnt + " 条" + (ok ? "，已提交同步" : "，同步提交失败（数据已存本机）"), ok ? "ok" : "err");
+    toast("已删除 " + cnt + " 条" + (ok ? "，已同步到云端" : "，同步失败（数据已存本机）"), ok ? "ok" : "err");
   });
 }
 /* 展开/收起某一行为合并组 */
@@ -1138,7 +1228,7 @@ function savePwd(){
     $("pwdWarn").classList.add("hidden");
     // 若此前记住了密码，同步更新为新密码
     if (localStorage.getItem(PWD_KEY)) localStorage.setItem(PWD_KEY, newP);
-    toast("密码已修改" + (ok ? "，已重新加密同步" : "，同步提交失败（本机已生效）"), ok ? "ok" : "err");
+    toast("密码已修改" + (ok ? "，已重新加密并同步" : "，同步失败（本机已生效）"), ok ? "ok" : "err");
   }).catch(function(e){
     console.error(e);
     toast("修改失败：" + (e && e.message ? e.message : "未知错误"), "err");
@@ -1276,7 +1366,7 @@ function saveImport(){
     closeImport();
     renderStats();
     renderList();
-    toast("导入完成，新增 " + res.added + " 条记录" + (res.ok ? "，已提交同步" : "，同步提交失败（数据已存本机）"), res.ok ? "ok" : "err");
+    toast("导入完成，新增 " + res.added + " 条记录" + (res.ok ? "，已同步到云端" : "，同步失败（数据已存本机）"), res.ok ? "ok" : "err");
   }).catch(function(e){
     console.error(e);
     toast("导入失败：" + (e && e.message ? e.message : "未知错误"), "err");
@@ -1403,15 +1493,16 @@ document.addEventListener("keydown", function(e){
 // 主题初始化
 var savedTheme = localStorage.getItem(THEME_KEY);
 document.body.setAttribute("data-theme", savedTheme || "element");
-// 预拉取仓库数据
-fetchRemoteData().then(function(p){
-  if (p){
-    state.remotePayload = p;
-    state.remoteLoaded = true;
-    state.remoteOk = true;
-  }
+// 预拉取仓库数据（基线 + 最新 Issue）
+fetchRemoteSources().then(function(src){
+  var all = [];
+  if (src.baseline) all.push(src.baseline);
+  all = all.concat(src.issues);
+  state.remotePayloads = all;
+  state.remoteLoaded = all.length > 0;
+  state.remoteOk = all.length > 0;
   $("lockLoad").textContent = state.remoteLoaded
-    ? "数据仓库已连接，输入密码即可查看"
+    ? "数据仓库已连接，输入密码即可查看（已含最新同步）"
     : "仓库连接失败，将使用本机缓存（离线数据）";
 }).catch(function(){ $("lockLoad").textContent = "仓库连接失败，将使用本机缓存"; });
 
